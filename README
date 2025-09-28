@@ -3,3 +3,5 @@ It's forked from the original CVS repo of Glide open source project at
 sourceforge:  https://sourceforge.net/projects/glide/
 
 Source is licensed under 3DFX GLIDE Source Code General Public License.
+
+In the process of converting this to be able to be compiled for x64 and ARM64
