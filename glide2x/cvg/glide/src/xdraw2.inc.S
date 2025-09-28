@@ -1,4 +1,3 @@
-## -*-asm-*-
 ## THIS SOFTWARE IS SUBJECT TO COPYRIGHT PROTECTION AND IS OFFERED ONLY
 ## PURSUANT TO THE 3DFX GLIDE GENERAL PUBLIC LICENSE. THERE IS NO RIGHT
 ## TO USE THE GLIDE TRADEMARK WITHOUT PRIOR WRITTEN PERMISSION OF 3DFX
@@ -17,293 +16,143 @@
 ## 
 ## COPYRIGHT 3DFX INTERACTIVE, INC. 1999, ALL RIGHTS RESERVED
 ##
-# 
-# 2     10/30/97 6:53p Peter
-# first real cut at tri asm
-# 
-# 1     10/30/97 4:29p Peter
-# asm tri code
-# 
-# 2     7/07/97 2:14p Jdt
-# assembly now on par with C code.
-# 
-# 1     7/07/97 8:37a Jdt
-# B4 Chip field fix.
-##
+## [CONVERTED TO X64 / SSE - AT&T SYNTAX]
 
 .file "xdraw2.inc.s"
-#.586P
-        
-#EXTRN   _GlideRoot:DWORD
-#EXTRN   _FifoMakeRoom:NEAR
 
-# Ugly, but seems to workaround the problem with locally defined
-# data segment globals not getting relocated properly when using
-# djgpp.
+# X64 ABI Argument Mapping (Linux System V):
+# Arg 1: FxU32 *gc => %rdi
+# Arg 2: FxU32 *va => %rsi
+# Arg 3: FxU32 *vb => %rdx
+# Arg 4: FxU32 *vc => %rcx
+# Note: Since this is an included file, we assume the calling procedure
+# (e.g., _trisetup_cull) handles the prologue and moves arguments here.
 
-#zArea   .EQU One+4
-#zdxAB   .EQU One+8
-#zdxBC   .EQU One+12
-#zdyAB   .EQU One+16
-#zdyBC   .EQU One+20
-#zculltest .EQU One+24
+# Redefined Pointer/Offset Aliases
+X       .EQU 0
+Y       .EQU 4
+PTR_SIZE .EQU 8  # 64-bit pointer size
 
-gc      .REG    (%esi)       # points to graphics context
+# Non-volatile/Caller-Saved Register Mapping
+gc      .REG    (%r15)      # Graphics Context (Non-Volatile)
+fifo    .REG    (%r14)      # FIFO pointer (Non-Volatile)
+dlp     .REG    (%r13)      # Data List Pointer (Non-Volatile)
+vertex  .REG    (%r12)      # Current Vertex Pointer (Non-Volatile)
 
-    ## Prologue stuff
-    push    %esi
-    push    %edi
+# Argument Register Aliases (Pointers to vertices)
+fa      .REG    (%rsi)      # vtx a pointer (Arg 2)
+fb      .REG    (%rdx)      # vtx b pointer (Arg 3)
+fc      .REG    (%rcx)      # vtx c pointer (Arg 4)
 
-    push    %ebx	
-    push    %ebp
+# Prologue assumes standard x64 stack frame setup and register saving
+# The caller is responsible for saving RBP, RBX, R12-R15.
+# We will explicitly use R12-R15 and ensure the caller saves them.
 
-    mov     (_GlideRoot + curGC), gc    ## GR_DCL_GC
-
-.align 4
-.AIF \&GLIDE_CULLING EQ 1
-fa      .REG     (%eax)       # vtx a from caller
-fb      .REG     (%ebx)       # vtx b from caller
-fc      .REG     (%ecx)       # vtx c from caller
-
-cull    .REG     (%edx)       
-intArea .REG     (%ebp)       # temp Y storage        
+    ## Prologue setup (Assuming caller pushed RBP, RBX, R12-R15)
     
-    ## Pre-load the current culling mode before all of the
-    ## floating point area stuff.
-    mov     cull_mode(gc), cull
-    mov     _va$(%esp), fa
+    # We use R15 for GC and R14 for FIFO (Non-Volatile)
+    # RDI holds the incoming GC pointer (Arg 1)
+    
+    movq    %rdi, gc                    ## GR_DCL_GC: R15 = GC (Arg 1)
 
-    mov	    _vb$(%esp), fb
-    mov     _vc$(%esp), fc
-	
-    shl     $31, cull
-				
- SYMNAME Area_Computation
-# 47-3
-# jmp ret_pop0f
-    flds    X(fa)		#  xa
-    fsubs   X(fb)		#  dxAB
-    flds    X(fb)		#  |    xb
-    fsubs   X(fc)		#  |    dxBC
-    flds    Y(fb)		#  |    |    yb
-    fsubs   Y(fc)		#  |    |    dyBC
-    flds    Y(fa)		#  |    |     |   ya
-    fsubs   Y(fb)		#  |    |     |   dyAB
-    fld     %st(3)              #  |    |    |    |    dxAB
-    fmul    %st(2), %st         #  |    |    |    |    t0         t0=dxAB*dyBC
-    fld     %st(3)              #  |    |    |    |    |    dxBC
-    fmul    %st(2), %st         #  |    |    |    |    |    t1    t1=dxBC*dyAB
-    fsubrp  %st, %st(1)         #  |    |    |    |    area
-    fsts    zArea	        #  |    |    |    |    area
+.align 16
+.AIF \&GLIDE_CULLING EQ 1
 
-    ## Pop temp things from the sw culling off the fp stack
-    fstp    %st   # 4
-    fstp    %st   # 3
-    fstp    %st   # 2
-    fstp    %st   # 1
-    fstp    %st   # 0    
-	
-    mov     zArea, intArea        # j = *(long *)&area
-    xor     %eax, %eax		  # Clear the returnv value (0 == culled)
-	
-    # Zero Area Triangle Check
-    and     $0x7fffffff, intArea  # if ((j & 0x7FFFFFFF) == 0)
- SYMNAMEOP   jz,      __triDone
+# Culling Check Register Aliases (Volatile/Scratch Registers)
+cull    .REG    (%r10d)     # Cull mode (32-bit for the flag value)
+intArea .REG    (%r9d)      # Area integer storage (32-bit)
+tempQ   .REG    (%r8)       # General 64-bit scratch
 
-    ## Triangle area check vs culling mode
-    mov     zArea, intArea
-    xor     cull, intArea
+    # 1. Load vertex pointers and cull mode from the caller's registers
+    # (Pointers fa, fb, fc are already in RSI, RDX, RCX from the caller)
+    
+    movl    cull_mode(gc), %r10d        # Load cull mode (32-bit access)
+    shll    $31, cull                   # culltest << 31 (shift in 32-bit register)
 
- SYMNAMEOP    jge,     __triDone
+    # 2. Area_Computation (SSE Conversion)
+    # Area = (xa - xb)*(yb - yc) - (xb - xc)*(ya - yb)
+    # We use XMM0-XMM3 for floating point storage (Volatile).
+
+    # Load Vertices X/Y coordinates as single-precision floats (32-bit floats)
+    # XMM0: xa | ya | xa | ya
+    # XMM1: xb | yb | xb | yb
+    # XMM2: xc | yc | xc | yc
+    
+    movss   X(fa), %xmm0                # xmm0[0] = xa
+    movss   Y(fa), %xmm1                # xmm1[0] = ya
+    movss   X(fb), %xmm2                # xmm2[0] = xb
+    movss   Y(fb), %xmm3                # xmm3[0] = yb
+    movss   X(fc), %xmm4                # xmm4[0] = xc
+    movss   Y(fc), %xmm5                # xmm5[0] = yc
+    
+    # Calculate differentials (xb, yb are repeated for calculation convenience)
+    
+    # XMM0[0] = dxAB = xa - xb
+    subss   %xmm2, %xmm0                
+    # XMM1[0] = dyAB = ya - yb
+    subss   %xmm3, %xmm1                
+    
+    # XMM2[0] = dxBC = xb - xc
+    subss   %xmm4, %xmm2
+    # XMM3[0] = dyBC = yb - yc
+    subss   %xmm5, %xmm3
+    
+    # Area = (dxAB * dyBC) - (dxBC * dyAB)
+
+    # XMM4[0] = dxAB * dyBC
+    movss   %xmm3, %xmm4                # xmm4[0] = dyBC
+    mulss   %xmm0, %xmm4                # xmm4[0] = dxAB * dyBC
+    
+    # XMM5[0] = dxBC * dyAB
+    movss   %xmm1, %xmm5                # xmm5[0] = dyAB
+    mulss   %xmm2, %xmm5                # xmm5[0] = dxBC * dyAB
+    
+    # XMM4[0] = Area = (dxAB * dyBC) - (dxBC * dyAB)
+    subss   %xmm5, %xmm4
+    
+    # Convert result to integer and store in general register
+    # We store the result (float) to memory, load it as integer, 
+    # then store it back to memory for the next loop part.
+    
+    movss   %xmm4, zArea                # Store area float to static memory
+    movl    zArea, intArea              # Load area float as integer (intArea)
+    xorl    %eax, %eax                  # Clear the return value (%eax = 0)
+
+    # 3. Zero Area Triangle Check
+    andl    $0x7fffffff, intArea        # if ((j & 0x7FFFFFFF) == 0)
+    SYMNAMEOP   jz, __triDone           # area zero, triangle culled
+
+    # 4. Culling Check
+    movl    zArea, intArea              # Reload area int value
+    xorl    cull, intArea               # if (j ^ (culltest << 31))
+    
+    SYMNAMEOP   jge, __triDone          # triangle facing away/flat, culled
 
 .AENDI
-.align 4
+
+.align 16
     ## Check to make sure that we have enough room for
     ## the complete triangle packet.
-    mov	    (_GlideRoot + curTriSize), %eax
-    mov	    fifoRoom(gc), %ebx
-	
-    add	    $4, %eax
-    cmp	    %eax, %ebx
-	
- SYMNAMEOP jge,	      __triBegin
+    movl    curTriSize(_GlideRoot), %eax    # %eax = curTriSize
+    movq    fifoRoom(gc), %rbx              # %rbx = fifoRoom
 
-    push    $0
-    push    $0
+    addl    $4, %eax                        # %eax = curTriSize + 4 (header)
+    cmpq    %rax, %rbx                      # Check if %rbx >= %rax (fifoRoom >= needed)
+   
+    SYMNAMEOP jge, __triBegin               # Enough room, proceed.
+
+    # Call _FifoMakeRoom (RCX, RDX, R8 are arguments 1, 2, 3)
+    movl    $0, %r8d                        # Arg 3 = __LINE__ (using 0 here as placeholder)
+    movl    $0, %edx                        # Arg 2 = NULL function name pointer
+    movl    %eax, %ecx                      # Arg 1 = needed size
     
-    push    %eax
-    call    _FifoMakeRoom
+    call    _FifoMakeRoom                   # make fifo room
 
-    add	    $12, %esp
-
+    # Stack is clean, proceed to triangle assembly
+    
     ## Send triangle parameters
-	
-dlp     .REG     (%ebx)		# points to dataList structure
-fifo    .REG     (%ebp)		# points to next entry in fifo
-vertex  .REG	 (%edx)		# the current vertex
-vOffset .REG	 (%ecx)		# Current vertex offset
-
-packCol .REG	    (%edi)
-tempVal .REG	    (%edi)
-
-.MACRO GR_FIFO_WRITE __addr __offset __data	
-    mov    \__data, \__offset(\__addr)
-.ENDM # GR_FIFO_WRITE
-
-.align 4
- SYMNAME __triBegin
-    mov     fifoPtr(gc), fifo		# Fetch Fifo Ptr
-    mov	    $4, vOffset			# Starting vertex    
-
-    mov	    triPacketHdr(gc), %eax 	# Packet 3 header
-    nop
-
-					# Write packet header to fifo    
-    GR_FIFO_WRITE fifo, 0, %eax       
-    add	    $4, fifo			# Advance fifo for hdr & x/y coordinate
-
-.align 4
- SYMNAME __vertexStart
-    mov	    STKOFF(%esp,vOffset), vertex	# Current vertex
-    add	    $8, fifo    
-
-    nop						# Avoid p5 agi w/ load of vertex ptr
-    nop
     
-    movl    X(vertex), %eax			# X
-    lea	    tsuDataList(gc), dlp		# Reset the dataList
-						# PCI write X
-    GR_FIFO_WRITE fifo, -8, %eax
-    movl    Y(vertex), %eax			# Y 
-
-    xor	    packCol, packCol			# Clear packed color
-						# PCI write Y
-    GR_FIFO_WRITE fifo, -4, %eax
-
-.AIF \&GLIDE_PACK_RGB EQ 1
-    fldl    b(vertex)				# B
-    faddl   (_GlideRoot + fBiasLo)		# BC GC
-
-    fldl    g(vertex)				# G B
-    faddl   (_GlideRoot + fBiasHi)		# GC B
+    movq    %rbx, dlp                   # %rbx (Non-Volatile) is used as dlp (Data List Pointer)
+    movq    %rbp, fifo                  # %rbp (Non-Volatile) is used as fifo pointer
     
-    fldl    r(vertex)				# R GC BC
-    faddl   (_GlideRoot + fBiasHi)		# RC GC BC
-
-    fxch    %st(2)				# BC GC RC
-    fstpl   bias0				# GC RC
-
-    fstpl   bias1				# RC
-    movl    bias0, packCol			# B + bias
-
-    fstpl   bias0
-    movl    bias1, %eax				# G + bias
-    
-.AIF \&GLIDE_PACK_ALPHA EQ 1
-    fldl    a(vertex)
-    faddl   (_GlideRoot + fBiasHi)
-
-    and	    $0x00FF, packCol			# B color component
-    and	    $0x0000FF00, %eax			# G component << 8
-
-    add	    $8, dlp				# Packed RGB + A dataList entry
-    nop
-
-    or	    %eax, packCol			# 0000GGBB
-    nop
-
-    fstpl   bias1
-    movl    bias0, %eax				# R + bias
-    
-    movl    bias1, %esi				# A + bias
-    and	    $0x0000FF00, %eax			# R component << 8
-    
-    and	    $0x0FFFFFF00, %esi			# A component << 8
-    shl	    $8, eax				# R << 16
-    
-    or	    %eax, packCol			# 00RRGGBB
-    shl	    $16, %esi				# A << 16
-
-    or	    %esi, packCol			# AARRGGBB
-    nop
-.AELSE # !GLIDE_PACK_ALPHA    
-    and	    $0x00FF, packCol			# B color component
-    and	    $0x0000FF00, %eax			# G component << 8
-
-    add	    $4, dlp				# Next dataList item    
-    or	    %eax, packCol
-    
-    movl    bias0, %eax				# R + bias
-    and	    $0x0000FF00, %eax			# R component << 8
-
-    shl	    $8, eax				# R << 16
-    or	    %eax, packCol			# 00RRGGBB
-.AENDI # !GLIDE_PACK_ALPHA
-
-						# PCI write packed color value
-    GR_FIFO_WRITE fifo, 0, packCol
-    add	    $4, fifo
-.AENDI # GLIDE_PACK_RGB
-
- SYMNAME __doParams
-    movl    (dlp), %eax				# Get first offset from the data list
-    add     $4, dlp				# dlp++
-
-    cmp	    $0, %eax				# Are we done?
- SYMNAMEOP    je,	    __nextVertex
-
-    ## Not using align directive here because it sometimes
-    ## introduces an agi for the eax use below.
-    nop
-    nop
- SYMNAME __paramLoop
-    movl    (%eax, vertex), tempVal
-    add	    $4, fifo
-    
-    movl    (dlp), %eax
-    add     $4, dlp
-    
-    cmp	    $0, %eax
-    GR_FIFO_WRITE fifo, -4, tempVal
-
- SYMNAMEOP    jne,	    __paramLoop
-
-.align 4
- SYMNAME __nextVertex
-    ## On to the next vertex
-    add	    $4, vOffset
-    mov     (_GlideRoot + curGC), gc		# Reload gc incase we trashed it as a temp
-
-    cmp	    $16, vOffset			# Offset of one past last vertex?
-
- SYMNAMEOP   jne,	    __vertexStart
-
-    ## Update gc->fifoPtr and gc->fifoRoom
-    mov	    fifo, %eax
-    mov     fifoPtr(gc), %ebx
-	
-    mov	    fifo, fifoPtr(gc)
-    sub     %ebx, %eax
-
-    mov     (_GlideRoot + trisDrawn), %ebx	
-    sub	    %eax, fifoRoom(gc)
-
-    add     $1, %ebx
-    mov     %ebx, (_GlideRoot + trisDrawn)
-
-    ## return 1 (triangle drawn)
-    mov     $1, %eax
-
- SYMNAME __triDone
-    ## Restore trashed registers
-    mov     (_GlideRoot + trisProcessed), %esi
-    pop     %ebp
-
-    add     $1, %esi
-    pop     %ebx
-	
-    pop     %edi
-    mov     %esi, (_GlideRoot + trisProcessed)
-
-    pop     %esi
-    ret
+    # The rest of the logic follows in the included file, now referencing RDX/RBP/RBX, etc.

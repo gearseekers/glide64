@@ -1,37 +1,32 @@
-# Linux makefile for Glide2/CVG
+# Linux x64 makefile for Glide2/CVG
 # This makefile MUST be processed by GNU make!!!
 #
-#  Copyright (c) 2004 - Daniel Borca
-#  Email : dborca@users.sourceforge.net
-#  Web   : http://www.geocities.com/dborca
+# Converted from Linux i386 to Linux x86_64 with SSE2 optimization.
 #
-#  Copyright (c) 2004 - Hiroshi Morii
-#  Email : koolsmoky@users.sourceforge.net
-#  Web   : http://www.3dfxzone.it/koolsmoky
+#  Copyright (c) 2004 - Daniel Borca
+#  Email : dborca@users.sourceforge.net
+#  Web   : http://www.geocities.com/dborca
 #
-#  Copyright (c) 2006 - Guillem Jover <guillem@hadrons.org>
+#  Copyright (c) 2004 - Hiroshi Morii
+#  Email : koolsmoky@users.sourceforge.net
+#  Web   : http://www.3dfxzone.it/koolsmoky
+#
+#  Copyright (c) 2006 - Guillem Jover <guillem@hadrons.org>
 #
 
 #
-#  Available options:
+#  Available options:
 #
-#    Environment variables:
-#	CPU		optimize for the given processor.
-#			default = 6 (PentiumPro)
+#    Environment variables:
 #	DEBUG=1		disable optimizations and build for debug.
 #			default = no
-#	USE_X86=1	use assembler triangle specializations; req by CVG
-#			default = yes
-#	USE_3DNOW=1	allow 3DNow! specializations. However, the true CPU
-#			capabilities are still checked at run-time to avoid
-#			crashes.
-#			default = no
-#	USE_MMX=1	allow MMX specializations.
-#			default = no
+#	USE_X86=1	<- DISABLED for x64: Assembler triangle specializations are x86 specific.
+#	USE_3DNOW=1	<- DISABLED for x64: 3DNow! is x86 specific.
+#	USE_MMX=1	<- DISABLED for x64: MMX is x86 specific.
 #	FXOEM2X=1	build fxoem2x.so
 #			default = no
 #
-#    Targets:
+#    Targets:
 #	all:		build everything
 #	glide2x:	build Glide2x lib
 #	clean:		remove object files
@@ -52,7 +47,7 @@ GLIDE_VERSION_MAJOR = 2
 GLIDE_VERSION_MINOR = 53
 
 GLIDE_LIB = libglide.a
-GLIDE_SO  = libglide.so
+GLIDE_SO  = libglide.so
 GLIDE_SO_X= libglide2x.so
 GLIDE_SONAME = $(GLIDE_SO).$(GLIDE_VERSION_MAJOR)
 GLIDE_SHARED = $(GLIDE_SONAME).$(GLIDE_VERSION_MINOR)
@@ -69,6 +64,7 @@ AS = nasm
 AR = ar
 
 CP = cp
+RM = rm -f
 
 ###############################################################################
 #	defines
@@ -80,7 +76,6 @@ LDLIBS = -lm
 
 # general
 CDEFS += -DGLIDE_HW_TRI_SETUP=1 -DGLIDE_PACKED_RGB=1 -DGLIDE_TRI_CULLING=1 -DGLIDE_DEFAULT_GAMMA=1.3f -DGLIDE_LIB=1
-#CDEFS += -DGLIDE3 -DGLIDE3_ALPHA -DGLIDE3_SCALER
 
 # special sli buffer clears
 CDEFS += -DGLIDE_BLIT_CLEAR=1
@@ -98,16 +93,12 @@ CDEFS += -DGDBG_INFO_ON -DGLIDE_DEBUG -DGLIDE_SANITY_ASSERT -DGLIDE_SANITY_SIZE
 endif
 
 override USE_FIFO = 1
-#override USE_X86 = 1
 
-ifeq ($(USE_X86),1)
-CDEFS += -DGLIDE_DISPATCH_SETUP=1 -DGLIDE_DISPATCH_DOWNLOAD=1
-override USE_FIFO = 1
-CDEFS += -DHAVE_XDRAWTRI_ASM=1
-override USE_DRAWTRI_ASM = 1
-else
+# *** X86 assembly features are DISABLED for x64 ***
+# We force C-only triangle setup.
 CDEFS += -DGLIDE_USE_C_TRISETUP=1
-endif
+override USE_DRAWTRI_ASM = 0
+override USE_X86 = 0
 
 # fifo
 ifeq ($(USE_FIFO),1)
@@ -124,33 +115,23 @@ CDEFS += -DGLIDE_PLUG -DGLIDE_SPLASH
 # librarian
 ARFLAGS = rus
 
-# assembler
-ASFLAGS = -O6 -felf -D__linux__
+# assembler - CHANGED TO X64 ELF FORMAT
+ASFLAGS = -O6 -felf64 -D__linux__
 ASFLAGS += $(CDEFS)
 
 # compiler
-CFLAGS = -Wall
+CFLAGS = -Wall -m64 -fPIC
 CFLAGS += -I. -I../../incsrc -I../../init
 CFLAGS += -I$(FX_GLIDE_SW)/fxmisc -I$(FX_GLIDE_SW)/newpci/pcilib -I$(FX_GLIDE_SW)/fxmemmap
 CFLAGS += $(CDEFS)
 
-# cpu optimized triangle
-ifeq ($(USE_MMX),1)
-CFLAGS += -DGL_MMX
-override USE_X86 = 1
-endif
+# x86 specific flags (MMX, 3DNOW!, -DGL_X86) are ignored/removed.
+# We explicitly set modern x64/SSE2 flags for optimization.
 
-ifeq ($(USE_3DNOW),1)
-CFLAGS += -DGL_AMD3D
-override USE_X86 = 1
-endif
-
-ifeq ($(USE_X86),1)
-CFLAGS += -DGL_X86
-OPTFLAGS ?= -O2 -ffast-math
-else
-OPTFLAGS ?= -O2 -ffast-math
-endif
+# optflags - Set optimization and architecture
+# We use -march=native in development or -march=x86-64 for portability.
+# -msse2 is the baseline for x86-64.
+OPTFLAGS ?= -O2 -ffast-math -march=x86-64 -msse2
 
 # optflags
 CFLAGS += $(OPTFLAGS)
@@ -162,7 +143,7 @@ CFLAGS += $(OPTFLAGS)
 GLIDE_OBJECTS = \
 	fifo.o \
 	gsplash.o \
-	g3df.o  \
+	g3df.o  \
 	gu.o \
 	guclip.o \
 	gpci.o \
@@ -187,25 +168,9 @@ GLIDE_OBJECTS = \
 	fpu.o \
 	xtexdl_def.o
 
-ifeq ($(USE_DRAWTRI_ASM),1)
-GLIDE_OBJECTS += xdrawtri.o
-endif
-ifeq ($(USE_X86),1)
-GLIDE_OBJECTS += \
-	xdraw2_def.o
-ifeq ($(USE_MMX),1)
-GLIDE_OBJECTS += \
-	xtexdl_mmx.o
-endif
-ifeq ($(USE_3DNOW),1)
-GLIDE_OBJECTS += \
-	xdraw2_3dnow.o \
-	xtexdl_3dnow.o
-endif
-else
+# Excluded x86-specific assembly objects (USE_DRAWTRI_ASM=0, USE_X86=0)
 GLIDE_OBJECTS += \
 	gxdraw.o
-endif
 
 GLIDE_OBJECTS += \
 	$(FX_GLIDE_SW)/newpci/pcilib/fxpci.o \
@@ -224,7 +189,7 @@ GLIDE_OBJECTS += \
 	../../init/video.o
 
 # FIXME: needed for now to match the old library signature, should be checked
-#        if it's really needed.
+#        if it's really needed.
 GLIDE_OBJECTS += \
 	$(FX_GLIDE_SW)/fxmisc/fxos.o \
 	$(FX_GLIDE_SW)/fxmisc/fximg.o
@@ -255,12 +220,13 @@ $(GLIDE_LIBDIR)/$(GLIDE_SONAME): $(GLIDE_LIBDIR)/$(GLIDE_SHARED)
 $(GLIDE_LIBDIR)/$(GLIDE_SO_X): $(GLIDE_LIBDIR)/$(GLIDE_SHARED)
 	ln -fs $(GLIDE_SHARED) $(GLIDE_LIBDIR)/$(GLIDE_SO_X)
 
+# Building the shared library. Note: -m64 is already in CFLAGS.
 $(GLIDE_LIBDIR)/$(GLIDE_SHARED): $(GLIDE_OBJECTS:.o=.lo)
 	$(CC) -o $@ -shared -Wl,--no-undefined -Wl,-soname,$(GLIDE_SONAME) $^ $(LDFLAGS) $(LDLIBS)
 
 ifeq ($(FXOEM2X),1)
-$(GLIDE_LIBDIR)/libfxoem2x.so: ../oem/oeminit.o
-#	$(LD) -o $@ $(LDFLAGS) ../oem/oeminit.o $(LDLIBS)
+$(GLIDE_LIBDIR)/libfxoem2x.so: ../oem/oeminit.lo
+#	$(CC) -o $@ -shared -Wl,--no-undefined ../oem/oeminit.lo $(LDLIBS)
 else
 $(GLIDE_LIBDIR)/libfxoem2x.so:
 #	$(warning FxOem2x not enabled... Skipping libfxoem2x.so)
@@ -269,38 +235,21 @@ endif
 fxoem2x: $(GLIDE_LIBDIR)/libfxoem2x.so
 
 ###############################################################################
-#	rules(2)
+#	rules(2) - Exclude x86-Specific Assembly Rules
 ###############################################################################
 
-#cpuid.o: cpudtect.asm
-#	$(AS) -o $@ $(ASFLAGS) $<
-xdraw2_def.o: xdraw2.asm
-	$(AS) -o $@ $(ASFLAGS) $<
+# The original makefile uses intermediate .o files (32-bit assembly) and then
+# copies them to .lo (PIC files). Since we disabled x86 assembly, we ignore these rules.
+# cpuid.o: cpudtect.asm
+# ...
 xtexdl_def.o: xtexdl.c
 	$(CC) -o $@ $(CFLAGS) -c $<
-xtexdl_mmx.o: xtexdl.asm
-	$(AS) -o $@ $(ASFLAGS) -DGL_MMX=1 $<
-xdraw2_3dnow.o: xdraw2.asm
-	$(AS) -o $@ $(ASFLAGS) -DGL_AMD3D=1 $<
-xtexdl_3dnow.o: xtexdl.asm
-	$(AS) -o $@ $(ASFLAGS) -DGL_AMD3D=1 $<
-xdrawtri.o: xdrawtri.asm
-	$(AS) -o $@ $(ASFLAGS) $<
+# xdraw2_def.o: xdraw2.asm
+# ... (all assembly rules disabled)
 
-#cpuid.lo: cpuid.o
-#	$(CP) $< $@
-xdraw2_def.lo: xdraw2_def.o
-	$(CP) $< $@
 xtexdl_def.lo: xtexdl_def.o
 	$(CP) $< $@
-xtexdl_mmx.lo: xtexdl_mmx.o
-	$(CP) $< $@
-xdraw2_3dnow.lo: xdraw2_3dnow.o
-	$(CP) $< $@
-xtexdl_3dnow.lo: xtexdl_3dnow.o
-	$(CP) $< $@
-xdrawtri.lo: xdrawtri.o
-	$(CP) $< $@
+# All other .lo rules for assembly files are ignored
 
 $(GLIDE_OBJECTS): fxinline.h fxgasm.h
 
@@ -311,24 +260,4 @@ fxgasm.h: fxgasm
 	./$< -hex > $@
 
 fxgasm: fxgasm.c
-	$(CC) -o $@ $(CFLAGS) $<
-
-###############################################################################
-#	clean, realclean
-###############################################################################
-
-clean:
-	-$(RM) *.o *.lo
-	-$(RM) ../../init/*.o ../../init/*.lo
-	-$(RM) ../oem/*.o ../oem/*.lo
-	-$(RM) $(FX_GLIDE_SW)/newpci/pcilib/*.o $(FX_GLIDE_SW)/newpci/pcilib/*.lo
-	-$(RM) $(FX_GLIDE_SW)/fxmisc/*.o $(FX_GLIDE_SW)/fxmisc/*.lo
-	-$(RM) fxinline.h
-	-$(RM) fxgasm.h
-
-realclean: clean
-	-$(RM) $(GLIDE_LIBDIR)/$(GLIDE_LIB)
-	-$(RM) $(GLIDE_LIBDIR)/$(GLIDE_SHARED)
-	-$(RM) $(GLIDE_LIBDIR)/$(GLIDE_SO)
-	-$(RM) $(GLIDE_LIBDIR)/$(GLIDE_SONAME)
-	-$(RM) $(GLIDE_LIBDIR)/$(GLIDE_SO_X)
+	$(CC) -o $@ $(CFLAGS

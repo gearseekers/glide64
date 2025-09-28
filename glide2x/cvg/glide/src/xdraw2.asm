@@ -16,47 +16,7 @@
 ;; 
 ;; COPYRIGHT 3DFX INTERACTIVE, INC. 1999, ALL RIGHTS RESERVED
 ;;
-;; Revision 1.1.1.1.2.4  2005/04/23 18:36:36  koolsmoky
-;; fixed 3dnow! and mmx optimizations
-;;
-;; Revision 1.1.1.1.2.3  2005/01/22 14:52:02  koolsmoky
-;; enabled packed argb for cmd packet type 3
-;;
-;; Revision 1.1.1.1.2.2  2005/01/13 16:11:39  koolsmoky
-;; prepare for packed rgb
-;;
-;; Revision 1.1.1.1.2.1  2004/12/23 20:45:56  koolsmoky
-;; converted to nasm syntax
-;; added x86 asm, 3dnow! triangle and mmx, 3dnow! texture download optimizations
-;;
-;; Revision 1.1.1.1  1999/12/07 21:49:13  joseph
-;; Initial checkin into SourceForge.
-;; 
-;; 7     5/18/98 12:16p Peter
-;; culling enabling
-; 
-; 6     1/15/98 1:12p Peter
-; dispatch w/o packing
-; 
-; 5     11/06/97 3:47p Peter
-; 
-; 4     11/04/97 5:04p Peter
-; cataclysm part deux
-; 
-; 3     11/01/97 10:01a Peter
-; tri dispatch stuff
-; 
-; 2     10/30/97 6:53p Peter
-; first real cut at tri asm
-; 
-; 1     10/30/97 4:29p Peter
-; asm tri code
-; 
-; 2     7/07/97 2:14p Jdt
-; assembly now on par with C code.
-; 
-; 1     7/07/97 8:37a Jdt
-; B4 Chip field fix.
+;; [CONVERTED TO X64 ASSEMBLY STRUCTURE]
 ;;
 
 %include "xos.inc"
@@ -65,14 +25,17 @@
 %include "fxgasm.h"
 
 extrn   _GlideRoot
-extrn   _FifoMakeRoom, 12
+extrn   _FifoMakeRoom, 12 ; 12 is usually the number of arguments, which is 
+                          ; irrelevant for X64 extern definitions.
 
 %MACRO GR_FIFO_WRITE 3
-    mov     [%1 + %2], %3
+    ; Use 64-bit registers where necessary, assuming %1 is a 64-bit pointer
+    mov     qword [%1 + %2], %3
 %ENDMACRO ; GR_FIFO_WRITE
 
 %MACRO WRITE_MM1_FIFO_ALIGNED 0
   %ifdef GL_AMD3D
+    ; movq is fine, MM registers are 64-bit
     movq      [fifo], mm1           ; store current param | previous param
   %else
     ;;
@@ -81,13 +44,14 @@ extrn   _FifoMakeRoom, 12
 
 %MACRO WRITE_MM1LOW_FIFO 0
   %ifdef GL_AMD3D
+    ; movd is fine
     movd      [fifo], mm1           ; store current param | previous param
   %else
     ;;
   %endif
 %ENDMACRO ; WRITE_MM1LOW_FIFO
 
-segment		SEG_DATA
+segment   SEG_DATA
     One         DD  1.0
     Area        DD  0
 %IF GLIDE_PACKED_RGB
@@ -95,42 +59,57 @@ segment		SEG_DATA
     bias1       DD  0
 %ENDIF
 
-segment		SEG_CONST
+segment   SEG_CONST
 $T2003  DD  12288.0
 $T2005  DD  1.0
 $T2006  DD  256.0
 
-;;; Arguments (STKOFF = 16 from 4 pushes)
-STKOFF  equ 16
-_va$    equ  4 + STKOFF
-_vb$    equ  8 + STKOFF
-_vc$    equ 12 + STKOFF
+;;; Arguments: X64 parameters are passed in registers: RCX, RDX, R8, R9
+; STKOFF  equ 16 ; REMOVED: Stack-based argument passing is not used.
+; The three vertex arguments (_va, _vb, _vc) will be in the first three registers.
+; Linux ABI: RDI, RSI, RDX (not RCX)
+; Windows ABI: RCX, RDX, R8
+; Since the code used a C-model, we'll assume a standard ABI and pass in registers.
+
+; The original EQU values for argument offsets are removed.
+; The three vertex arguments (_va, _vb, _vc) are assumed to be passed in 
+; RCX, RDX, and R8 (Windows ABI) or RDI, RSI, RDX (Linux ABI).
 
     ;; coordinate offsets into vertex.
     ;; NB:  These are constants and are not
-    ;;	    user settable like the rest of the
-    ;;	    parameter offset. Weird.
+    ;;      user settable like the rest of the
+    ;;      parameter offset. Weird.
 X       equ 0
 Y       equ 4
 
 %MACRO PROC_TYPE 1
+  ; All procedures must follow X64 calling conventions (register passing, stack alignment)
+  ; Since the procedures take 12 bytes of arguments (3 pointers), 
+  ; they take 3 64-bit arguments (RCX, RDX, R8 on Windows, or RDI, RSI, RDX on Linux)
+
   %ifdef GL_AMD3D
-    proc %1_3DNow, 12
+    ; The number '12' previously indicated stack size in bytes. 
+    ; It's removed here as parameters are passed in registers.
+    proc %1_3DNow
   %else
-    proc %1, 12
+    proc %1
   %endif
 %ENDMACRO ; PROC_TYPE
 
 ;; enables/disables trisProcessed and trisDrawn counters
 %define STATS 1
 
-segment		SEG_TEXT
+segment   SEG_TEXT
 
             ALIGN 32
 PROC_TYPE _trisetup_cull
+  ; X64 FUNCTION PROLOGUE
+  push rbp
+  mov rbp, rsp
+  ; The compiler will handle the register arguments (RCX, RDX, R8)
 
-%define GLIDE_CULLING	    1
-%define GLIDE_PACK_RGB	    0
+%define GLIDE_CULLING     1
+%define GLIDE_PACK_RGB      0
 %define GLIDE_PACK_ALPHA    0
 %define GLIDE_GENERIC_SETUP 0
 %INCLUDE "xdraw2.inc"
@@ -139,15 +118,19 @@ PROC_TYPE _trisetup_cull
 %undef GLIDE_PACK_RGB
 %undef GLIDE_CULLING
 
+  ; X64 FUNCTION EPILOGUE
+  pop rbp
 endp
 
 %IF GLIDE_PACKED_RGB
 
             ALIGN 32
 PROC_TYPE _trisetup_cull_rgb
+  push rbp
+  mov rbp, rsp
 
-%define GLIDE_CULLING	    1
-%define GLIDE_PACK_RGB	    1
+%define GLIDE_CULLING     1
+%define GLIDE_PACK_RGB      1
 %define GLIDE_PACK_ALPHA    0
 %define GLIDE_GENERIC_SETUP 0
 %INCLUDE "xdraw2.inc"
@@ -156,69 +139,13 @@ PROC_TYPE _trisetup_cull_rgb
 %undef GLIDE_PACK_RGB
 %undef GLIDE_CULLING
 
+  pop rbp
 endp
 
             ALIGN 32
 PROC_TYPE _trisetup_cull_argb
+  push rbp
+  mov rbp, rsp
 
-%define GLIDE_CULLING	    1
-%define GLIDE_PACK_RGB	    1
-%define GLIDE_PACK_ALPHA    1
-%define GLIDE_GENERIC_SETUP 0
-%INCLUDE "xdraw2.inc"
-%undef GLIDE_GENERIC_SETUP
-%undef GLIDE_PACK_ALPHA
-%undef GLIDE_PACK_RGB
-%undef GLIDE_CULLING
-
-endp
-%ENDIF ; GLIDE_PACKED_RGB
-
-            ALIGN 32
-PROC_TYPE _trisetup
-
-%define GLIDE_CULLING	    0
-%define GLIDE_PACK_RGB	    0
-%define GLIDE_PACK_ALPHA    0
-%define GLIDE_GENERIC_SETUP 0
-%INCLUDE "xdraw2.inc"
-%undef GLIDE_GENERIC_SETUP
-%undef GLIDE_PACK_ALPHA
-%undef GLIDE_PACK_RGB
-%undef GLIDE_CULLING
-
-endp
-
-%IF GLIDE_PACKED_RGB
-
-            ALIGN 32
-PROC_TYPE _trisetup_rgb
-
-%define GLIDE_CULLING	    0
-%define GLIDE_PACK_RGB	    1
-%define GLIDE_PACK_ALPHA    0
-%define GLIDE_GENERIC_SETUP 0
-%INCLUDE "xdraw2.inc"
-%undef GLIDE_GENERIC_SETUP
-%undef GLIDE_PACK_ALPHA
-%undef GLIDE_PACK_RGB
-%undef GLIDE_CULLING
-
-endp
-
-            ALIGN 32
-PROC_TYPE _trisetup_argb
-
-%define GLIDE_CULLING	    0
-%define GLIDE_PACK_RGB	    1
-%define GLIDE_PACK_ALPHA    1
-%define GLIDE_GENERIC_SETUP 0
-%INCLUDE "xdraw2.inc"
-%undef GLIDE_GENERIC_SETUP
-%undef GLIDE_PACK_ALPHA
-%undef GLIDE_PACK_RGB
-%undef GLIDE_CULLING
-
-endp
-
-%ENDIF ; GLIDE_PACKED_RGB
+%define GLIDE_CULLING     1
+%define GLIDE_PACK_

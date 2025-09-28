@@ -22,100 +22,84 @@
 #
 #
 
-.file  "cpudtect.s"
+.file "cpudtect.s"
 
-# 586P
-# model FLAT,C
-
-#      Data for data segment goes here
-# DATA   SEGMENT DWORD USE32 PUBLIC DATA; 
-# DATA   ENDS
-    
-# Some useful constants
-# CPU Type
-CPUTypeUnknown  .ASSIGNA 0xffffffff
-CPUTypePrePent  .ASSIGNA 4
-CPUTypeP5       .ASSIGNA 5
-CPUTypeP6       .ASSIGNA 6
-        
-# References to external data:
-    
-#_TEXT   SEGMENT
-#
-#  _cpu_detect_asm - detect the type of CPU 
-# 
-#  USAGE:
-#
-#  int __cdecl _cpu_detect_asm(void);
-#
-#  returns 4 for non-pen
-
+# .586P / .model FLAT,C - Removed for x64
 .text
 .align 4
-.globl _cpu_detect_asm
-_cpu_detect_asm:		
-P6Stuff:
-    pusha                              # save all regs.
 
-    # First, determine whether CPUID instruction is available.
-    # If it's not, then it's a 386 or 486.
-    pushf                               # push original EFLAGS.
-    pop %eax                            # pop into eax
-    mov %eax, %ecx                      # save original EFLAGS in ecx
-    xor $0x200000, %eax                 # flip ID bit in EFLAGS
-    push %eax                           # put it back on stack
-    popf                                # pop into EFLAGS
-    pushf                               # get EFLAGS back
-    pop %eax                            # into eax
-    xor %ecx, %eax                      # check to see if we could toggle ID
-    jz  NotPentium                      # Sorry, not P5 or P6.
+# CPU Type Constants - Use 32-bit (CPUTypeUnknown) or 64-bit (other) constants.
+CPUTypeUnknown  .equ 0xffffffff
+CPUTypePrePent  .equ 4
+CPUTypeP5       .equ 5
+CPUTypeP6       .equ 6
+
+# .globl is the GNU standard for making a function public/external
+.globl _cpu_detect_asm
+_cpu_detect_asm:        
+P6Stuff:
+    # Save the *non-volatile* caller-saved registers that we will modify:
+    # Only %rbx is used below and is non-volatile in System V ABI.
+    pushq   %rbx
+    # The return value is 32-bit, placed in %eax.
+
+    # ----------------------------------------------------------------------
+    # 1. Check for CPUID Support (Toggle ID bit in RFLAGS)
+    # ----------------------------------------------------------------------
+    # pusha/popa and pushf/popf become pushq/popq/pushfq/popfq with 64-bit regs.
     
-    #
-    # Now determine whether it's an intel P6 CPU.
-    #
-    ##  Is it an Intel CPU?
-    xor %eax, %eax                      # eax = 0.
-    cpuid                               # get cpuid
-    xor $0x756e6547, %ebx               # "Genu"
-    jnz NotIntel
-    xor $0x49656e69, %edx               # "ineI"
-    jnz NotIntel
-    xor $0x6c65746e, %ecx               # "ntel"
-    jnz NotIntel                        #
-    ##  Verifying architecture family
-    mov $1, %eax
-    cpuid                               # get family/model/stepping
-    shr $8, %eax                        # rid of model & stepping number
-    and $0xf, %eax                      # use only family
-    cmp $6, %eax
-    jl     IsP5                         # It's a P5
-    ## Else it's a P6
-    #
-    # Intel P6 processor. 
-    # Make sure it supports Memory Type Range Request registers
-    #
+    pushfq                                 # push original RFLAGS (64-bit)
+    popq    %rax                           # pop into %rax
+    movq    %rax, %rcx                     # save original RFLAGS in %rcx
+    xorl    $0x200000, %eax                # flip ID bit (bit 21) in %eax (32-bit operation is fine)
+    pushq   %rax                           # put it back on stack
+    popfq                                  # pop into RFLAGS
+    pushfq                                 # get RFLAGS back
+    popq    %rax                           # into %rax
+    xorq    %rcx, %rax                     # check if toggle was successful
+    jz      NotPentium                     # Sorry, not P5 or P6.
+    
+    # ----------------------------------------------------------------------
+    # 2. Check for "GenuineIntel" signature (always a 32-bit check)
+    # ----------------------------------------------------------------------
+    xorl    %eax, %eax                     # %eax = 0.
+    cpuid                                  # get cpuid (output in %eax, %ebx, %ecx, %edx)
+    xorl    $0x756e6547, %ebx              # "Genu"
+    jnz     NotIntel
+    xorl    $0x49656e69, %edx              # "ineI"
+    jnz     NotIntel
+    xorl    $0x6c65746e, %ecx              # "ntel"
+    jnz     NotIntel                       
+    
+    # ----------------------------------------------------------------------
+    # 3. Check for Family (5 or 6)
+    # ----------------------------------------------------------------------
+    movl    $1, %eax                       # set %eax=1 for family check
+    cpuid                                  # get family/model/stepping
+    shrl    $8, %eax                       # rid of model & stepping number
+    andl    $0xf, %eax                     # use only family
+    cmpl    $6, %eax
+    jl      IsP5                           # It's a P5
+    
+    # Else it's a P6
 IsP6:   
-    popa
-    mov $6, %eax                        # 
-    ret                                 # return 
+    movl    $CPUTypeP6, %eax               # Return 6
+    jmp     EndDetect
 
 IsP5:   
-    popa
-    mov $5, %eax                        # 
-    ret
+    movl    $CPUTypeP5, %eax               # Return 5
+    jmp     EndDetect
 
 NotPentium:
-    popa
-    mov $4, %eax
-    ret
+    movl    $CPUTypePrePent, %eax          # Return 4
+    jmp     EndDetect
 
 NotIntel:
-    popa
-    mov $0xffffffff, %eax
-    ret
+    movl    $CPUTypeUnknown, %eax          # Return 0xffffffff
+
+EndDetect:
+    popq    %rbx                           # Restore non-volatile %rbx
+    ret                                    # Return. The result is in %eax.
 
 .L_end__cpu_detect_asm:
-.size _cpu_detect_asm,.L_end__cpu_detect_asm-_cpu_detect_asm	
-.END
-
-
+.size _cpu_detect_asm,.L_end__cpu_detect_asm-_cpu_detect_asm

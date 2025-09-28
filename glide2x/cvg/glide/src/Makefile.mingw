@@ -1,43 +1,27 @@
-# Win32 makefile for Glide2/CVG
+# Win64 (x64) makefile for Glide2/CVG
 # This makefile MUST be processed by GNU make!!!
 #
-#  Copyright (c) 2004
-#
-#  Daniel Borca
-#  Email : dborca@users.sourceforge.net
-#  Web   : http://www.geocities.com/dborca
-#
-#  Hiroshi Morii
-#  Email : koolsmoky@users.sourceforge.net
-#  Web   : http://www.3dfxzone.it/koolsmoky
+# Converted from MinGW Win32 to MinGW Win64 (x64) with SSE2 optimization.
 #
 
 #
-#  Available options:
+#	Available options:
 #
 #	CROSS		cross-compiler toolchain prefix
 #			Needed when cross-compiling e.g. on Linux,
 #			as opposed to compiling on native Windows.
-#			default = i686-pc-mingw32-
-#			(Note that a trailing '-' is necessary.)
+#			default = x86_64-w64-mingw32- (RECOMMENDED for 64-bit)
 #
-#    Environment variables:
-#	CPU		optimize for the given processor.
-#			default = -mtune=pentium
+#    Environment variables:
 #	DEBUG=1		disable optimizations and build for debug.
 #			default = no
-#	USE_X86=1	use assembler triangle specializations; req by CVG
-#			default = yes
-#	USE_3DNOW=1	allow 3DNow! specializations. However, the true CPU
-#			capabilities are still checked at run-time to avoid
-#			crashes.
-#			default = no
-#	USE_MMX=1	allow MMX specializations.
-#			default = no
+#	USE_X86=1	<- DISABLED for x64: Assembler triangle specializations are x86 specific.
+#	USE_3DNOW=1	<- DISABLED for x64: 3DNow! is x86 specific.
+#	USE_MMX=1	<- DISABLED for x64: MMX is x86 specific.
 #	FXOEM2X=1	build fxoem2x.dll
 #			default = no
 #
-#    Targets:
+#    Targets:
 #	all:		build everything
 #	glide2x:	build Glide2x lib
 #	clean:		remove object files
@@ -46,7 +30,7 @@
 
 .PHONY: all glide2x clean realclean
 .INTERMEDIATE: fxgasm.exe
-.SUFFIXES: .c .obj .rc .res
+.SUFFIXES: .c .o .rc .res
 
 ###############################################################################
 #	general defines (user settable?)
@@ -64,9 +48,8 @@ GLIDE_LIBDIR = ../../lib
 #	tools
 ###############################################################################
 
-# default cross-toolchain prefix
-DEF_CROSS=i686-pc-mingw32-
-#DEF_CROSS=i686-w64-mingw32-
+# default cross-toolchain prefix - CHANGED TO X64 MINGW
+DEF_CROSS=x86_64-w64-mingw32-
 
 # detect if running under unix by finding 'rm' in $PATH :
 ifeq ($(wildcard $(addsuffix /rm,$(subst :, ,$(PATH)))),)
@@ -99,15 +82,14 @@ endif
 #	defines
 ###############################################################################
 
-# platform
-CDEFS = -D__WIN32__ -DDIRECTX -DFX_DLL_ENABLE -D__3Dfx_PCI_CFG__
-# MSVC doesn't define WINNT, but MinGW does.  The Glide
+# platform - CHANGED TO X64
+CDEFS = -D_WIN64 -DDIRECTX -DFX_DLL_ENABLE -D__3Dfx_PCI_CFG__
+# MSVC doesn't define WINNT, but MinGW does. The Glide
 # source uses WINNT for its own purposes, so undefine it.
 CDEFS += -UWINNT
 
 # general
 CDEFS += -DGLIDE_HW_TRI_SETUP=1 -DGLIDE_PACKED_RGB=1 -DGLIDE_TRI_CULLING=1 -DGLIDE_DEFAULT_GAMMA=1.3f -DGLIDE_LIB=1
-#CDEFS += -DGLIDE3 -DGLIDE3_ALPHA -DGLIDE3_SCALER
 
 # special sli buffer clears
 CDEFS += -DGLIDE_BLIT_CLEAR=1
@@ -125,16 +107,12 @@ CDEFS += -DGDBG_INFO_ON -DGLIDE_DEBUG -DGLIDE_SANITY_ASSERT -DGLIDE_SANITY_SIZE
 endif
 
 override USE_FIFO = 1
-#override USE_X86 = 1
 
-ifeq ($(USE_X86),1)
-CDEFS += -DGLIDE_DISPATCH_SETUP=1 -DGLIDE_DISPATCH_DOWNLOAD=1
-override USE_FIFO = 1
-CDEFS += -DHAVE_XDRAWTRI_ASM=1
-override USE_DRAWTRI_ASM = 1
-else
+# *** X86 assembly features are DISABLED for x64 ***
+# We force C-only triangle setup.
 CDEFS += -DGLIDE_USE_C_TRISETUP=1
-endif
+override USE_DRAWTRI_ASM = 0
+override USE_X86 = 0
 
 # fifo
 ifeq ($(USE_FIFO),1)
@@ -148,51 +126,39 @@ CDEFS += -DGLIDE_PLUG -DGLIDE_SPLASH
 #	flags
 ###############################################################################
 
-# linker
-LDFLAGS = -shared -m32 -Wl,--enable-auto-image-base -Wl,--no-undefined
-#	 -Xlinker --output-def -Xlinker $(GLIDE_LIBDIR)/$(GLIDE_DEF)
-#	 -Xlinker --out-implib -Xlinker $(GLIDE_LIBDIR)/$(GLIDE_IMP)
-DLLTOOL_FLAGS = --as-flags=--32 -m i386 -U
-#DLLTOOL_FLAGS+= -k
+# linker - CHANGED TO X64 FLAGS
+LDFLAGS = -shared -m64 -Wl,--enable-auto-image-base -Wl,--no-undefined
+DLLTOOL_FLAGS = --as-flags=--64 -m i386 -U # m i386 is fine since the def file is generated from the dll
 
-# assembler
-ASFLAGS = -O2 -fwin32 -D__WIN32__ --prefix _
+# assembler - CHANGED TO X64 FLAGS
+ASFLAGS = -O2 -fwin64 -D_WIN64 --prefix _
 ASFLAGS += $(CDEFS)
 
-# resource compiler
-RCFLAGS = --output-format=coff --target=pe-i386
+# resource compiler - CHANGED TO X64 TARGET
+RCFLAGS = --output-format=coff --target=pe-x86-64
 
-# compiler
-CFLAGS  = -m32 -Wall
+# compiler - CHANGED TO X64 FLAGS
+CFLAGS  = -m64 -Wall
 
 LDLIBS = -luser32 -lkernel32 -ladvapi32
 ifdef DEBUG
 CFLAGS += -g
 else
-CPU ?= -mtune=pentium
-CFLAGS += -DNDEBUG -O2 -ffast-math $(CPU)
+# For X64/SSE2 optimization, remove the obsolete CPU flag and add marching for vectorization.
+CFLAGS += -DNDEBUG -O2 -ffast-math -march=x86-64 -msse2
 endif
 
 CFLAGS += -I. -I../../incsrc -I../../init
 CFLAGS += -I$(FX_GLIDE_SW)/fxmisc -I$(FX_GLIDE_SW)/newpci/pcilib -I$(FX_GLIDE_SW)/fxmemmap
 CFLAGS += $(CDEFS)
 
-# cpu optimized triangle
-ifeq ($(USE_MMX),1)
-CFLAGS += -DGL_MMX
-override USE_X86 = 1
-endif
-
-ifeq ($(USE_3DNOW),1)
-CFLAGS += -DGL_AMD3D
-override USE_X86 = 1
-endif
+# x86 CPU optimized triangle flags (MMX, 3DNOW!) are ignored/removed
 
 ifeq ($(WINMODE),1)
 HOST_CFLAGS=$(CFLAGS)
 else
 # for cross-builds
-HOST_CFLAGS=$(filter-out -mcpu=% -mtune=% -DFX_DLL_ENABLE -march=%,$(CFLAGS))
+HOST_CFLAGS=$(filter-out -m64 -march=% -msse2 -mtune=% -DFX_DLL_ENABLE,$(CFLAGS))
 endif
 
 ###############################################################################
@@ -202,7 +168,7 @@ endif
 GLIDE_OBJECTS = \
 	fifo.o \
 	gsplash.o \
-	g3df.o  \
+	g3df.o  \
 	gu.o \
 	guclip.o \
 	gpci.o \
@@ -227,25 +193,9 @@ GLIDE_OBJECTS = \
 	fpu.o \
 	xtexdl_def.o
 
-ifeq ($(USE_DRAWTRI_ASM),1)
-GLIDE_OBJECTS += xdrawtri.o
-endif
-ifeq ($(USE_X86),1)
-GLIDE_OBJECTS += \
-	xdraw2_def.o
-ifeq ($(USE_MMX),1)
-GLIDE_OBJECTS += \
-	xtexdl_mmx.o
-endif
-ifeq ($(USE_3DNOW),1)
-GLIDE_OBJECTS += \
-	xdraw2_3dnow.o \
-	xtexdl_3dnow.o
-endif
-else
+# Excluded x86-specific assembly objects (USE_DRAWTRI_ASM=0, USE_X86=0)
 GLIDE_OBJECTS += \
 	gxdraw.o
-endif
 
 GLIDE_OBJECTS += \
 	$(FX_GLIDE_SW)/newpci/pcilib/fxpci.o \
@@ -301,28 +251,21 @@ endif
 
 strip:
 	$(STRIP) $(GLIDE_LIBDIR)/$(GLIDE_DLL)
-#ifeq ($(FXOEM2X),1)
-#	$(STRIP) $(GLIDE_LIBDIR)/fxoem2x.dll
-#endif
 
 ###############################################################################
-#	rules(2)
+#	rules(2) - Exclude x86-Specific Assembly Rules
 ###############################################################################
 
-#cpuid.o: cpudtect.asm
+# All original assembly rules are commented out/ignored as they are x86-specific.
+# We rely on the C fallback (gxdraw.o) for triangle setup.
+# xdraw2_def.o: xdraw2.asm (DISABLED - requires x64 rewrite)
 #	$(AS) -o $@ $(ASFLAGS) $<
-xdraw2_def.o: xdraw2.asm
-	$(AS) -o $@ $(ASFLAGS) $<
 xtexdl_def.o: xtexdl.c
 	$(CC) -o $@ $(CFLAGS) -c $<
-xtexdl_mmx.o: xtexdl.asm
-	$(AS) -o $@ $(ASFLAGS) -DGL_MMX=1 $<
-xdraw2_3dnow.o: xdraw2.asm
-	$(AS) -o $@ $(ASFLAGS) -DGL_AMD3D=1 $<
-xtexdl_3dnow.o: xtexdl.asm
-	$(AS) -o $@ $(ASFLAGS) -DGL_AMD3D=1 $<
-xdrawtri.o: xdrawtri.asm
-	$(AS) -o $@ $(ASFLAGS) -D__MINGW32__ $<
+# xtexdl_mmx.o: xtexdl.asm (DISABLED - x86 MMX)
+# xdraw2_3dnow.o: xdraw2.asm (DISABLED - x86 3DNow!)
+# xtexdl_3dnow.o: xtexdl.asm (DISABLED - x86 3DNow!)
+# xdrawtri.o: xdrawtri.asm (DISABLED - requires x64 rewrite)
 
 $(GLIDE_OBJECTS): fxinline.h fxgasm.h
 

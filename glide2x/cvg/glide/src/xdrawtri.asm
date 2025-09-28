@@ -15,8 +15,8 @@
 ;; THE UNITED STATES.
 ;;
 ;; COPYRIGHT 3DFX INTERACTIVE, INC. 1999, ALL RIGHTS RESERVED
-
-;; Adapted from gdraw.c:grDrawTriangle() for nasm
+;;
+;; [CONVERTED TO X64 ASSEMBLY STRUCTURE - NASM/MASM SYNTAX]
 
 %include "xos.inc"
 
@@ -26,21 +26,33 @@ extrn   _GlideRoot
 
 segment SEG_TEXT
 
-align 16
-proc grDrawTriangle, 12
+; grDrawTriangle (Windows/C++ ABI)
+; Arguments: (void *va, void *vb, void *vc) => RCX, RDX, R8
+; Since the target function is likely also CDECL, we don't need a custom prologue.
 
-;;mov edx, dword [_GlideRoot+curGC]
-;;mov eax, dword [edx+kTriProcOffset]
-  mov eax, dword [_GlideRoot+curGC]
-  jmp [eax + kTriProcOffset]
+align 16
+proc grDrawTriangle 
+    ; Load pointer to current GC (curGC) structure from _GlideRoot (64-bit pointer)
+    mov rax, qword [_GlideRoot]
+    mov rax, qword [rax + curGC]  ; RAX now holds the address of the current GC structure
+
+    ; Load the address of the dispatch routine (kTriProcOffset) from the GC structure.
+    ; This is the target address of the triangle setup routine (likely x86 code pointer).
+    ; We must ensure the offset kTriProcOffset correctly reflects the 64-bit structure layout.
+    mov rax, qword [rax + kTriProcOffset] 
+    
+    ; Jump to the dispatch routine.
+    jmp rax
 endp
-  align 16
+
+align 16
 
 %if XOS == XOS_WIN32
 %ifdef __MINGW32__
-; GNU LD fails with '_' prefix
-export  grDrawTriangle@12
+; For X64, the name decoration (@12) is generally removed.
+export  grDrawTriangle
 %else
-export _grDrawTriangle@12
+; Standard MSVC/MASM X64 function export name is usually undecorated.
+export grDrawTriangle
 %endif
 %endif ; _WIN32
