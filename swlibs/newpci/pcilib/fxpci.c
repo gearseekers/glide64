@@ -5,39 +5,59 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include "fxpci.h"
-#include <stdint.h> // For uintptr_t
+#include "fxlinux.h" // <-- FIX: Includes definitions for pci_open_linux, etc.
 
-// ... (most of the file remains the same) ...
+static int pci_fd = -1; // File descriptor for PCI access
 
-// Example of a function that needs modification for 64-bit
-int pciOpen(void) {
-    // ...
-    // When mapping memory, ensure we use uintptr_t for base addresses
-    // to avoid truncation on a 64-bit system.
-    uintptr_t base_addr = pciGetBaseAddr(bus, dev, fn, 0);
-    if (base_addr == 0) {
-        fprintf(stderr, "Could not get base address\n");
-        return 0;
+FxBool pciOpen(void) {
+    if (pci_fd >= 0) {
+        return FXTRUE; // Already open
     }
-
-    // Use %p for printing pointer-sized integers like base addresses.
-    printf("Base Address: 0x%p\n", (void*)base_addr);
-
-    // ... map the memory using mmap or equivalent ...
-    // void *mapped_mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, base_addr);
-    
-    return 1;
+    pci_fd = pci_open_linux();
+    return (pci_fd >= 0);
 }
 
-// Another example: Ensure all configuration reads/writes handle sizes correctly
+void pciClose(void) {
+    if (pci_fd >= 0) {
+        pci_close_linux(pci_fd);
+        pci_fd = -1;
+    }
+}
+
 FxU32 pciReadLong(int bus, int dev, int fn, int addr)
 {
-    // The underlying Linux/OS calls for reading PCI config space
-    // should handle the 32-bit vs 64-bit address space correctly.
-    // No changes are needed here unless the library was doing something
-    // non-standard like direct port I/O.
+    FxU32 result = 0;
+    if (pci_fd < 0) {
+        fprintf(stderr, "pciReadLong: PCI library not open.\n");
+        return 0;
+    }
     
-    // ... (original implementation) ...
+    if (pci_read_config_long_linux(pci_fd, bus, dev, fn, addr, &result) != 0) {
+        fprintf(stderr, "pciReadLong: Failed to read from PCI config space.\n");
+        return 0;
+    }
+    
     return result;
+}
+
+void pciWriteLong(int bus, int dev, int fn, int addr, FxU32 data)
+{
+    if (pci_fd < 0) {
+        fprintf(stderr, "pciWriteLong: PCI library not open.\n");
+        return;
+    }
+
+    if (pci_write_config_long_linux(pci_fd, bus, dev, fn, addr, data) != 0) {
+        fprintf(stderr, "pciWriteLong: Failed to write to PCI config space.\n");
+    }
+}
+
+// Dummy implementation for pciFindCard and other helpers
+FxBool pciFindCard(FxU32 vendorId, FxU32 deviceId, int cardnum, pciDevice_t *card_info) {
+    return FXFALSE; 
+}
+FxU32 pciGetBaseAddr(int bus, int dev, int fn, int reg) {
+    return 0;
 }

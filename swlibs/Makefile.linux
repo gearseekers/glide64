@@ -1,5 +1,5 @@
 #
-# Makefile for building the shared software libraries (swlibs) for x86-64
+# Makefile for building the shared software libraries (swlibs) for x86-64 Linux
 #
 
 # ---
@@ -7,15 +7,25 @@
 # ---
 CC = gcc
 AR = ar
-CFLAGS = -m64 -msse2 -O2 -fPIC -Wall -I./fxmisc -I./newpci/pcilib
+# FIX: Added top-level include path so headers like 3dfx.h can be found
+CFLAGS = -m64 -msse2 -O2 -fPIC -Wall -I../incsrc -I./fxmisc -I./newpci/pcilib
 
 # ---
 # Source files
 # ---
-C_SRSRCS_FXMISC = $(wildcard fxmisc/*.c)
+
+# Include all miscellaneous utility files
+C_SRCS_FXMISC = $(wildcard fxmisc/*.c)
 OBJS_FXMISC = $(patsubst %.c, %.o, $(C_SRCS_FXMISC))
 
-C_SRCS_PCILIB = $(wildcard newpci/pcilib/*.c)
+# Specifically list the PCI lib files that are compatible with Linux
+C_SRCS_PCILIB = \
+	newpci/pcilib/fxpci.c \
+	newpci/pcilib/fxinfo.c \
+	newpci/pcilib/fxlinux.c \
+	newpci/pcilib/fxmsr.c \
+	newpci/pcilib/sst1_pci.c
+
 OBJS_PCILIB = $(patsubst %.c, %.o, $(C_SRCS_PCILIB))
 
 # ---
@@ -30,7 +40,7 @@ libswlibs.a: $(OBJS_FXMISC) $(OBJS_PCILIB)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o *.a
+	rm -f *.a
 	find . -name "*.o" -exec rm {} \;
 
 .PHONY: all clean
