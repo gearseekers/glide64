@@ -38,9 +38,9 @@ extern "C" {
 
 #ifndef FX_GLIDE_H_
 #define FX_GLIDE_H_
-#include "../../../../swlibs/fxmisc/3dfx.h"
-#include "../../../incsrc/glidetype.h"
-#include "../../../incsrc/glideutl.h"
+#include <3dfx.h>
+#include "glidetype.h"
+#include "glideutl.h"
 #endif
 
 /*
