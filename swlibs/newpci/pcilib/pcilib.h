@@ -17,6 +17,12 @@
 ** 
 ** COPYRIGHT 3DFX INTERACTIVE, INC. 1999, ALL RIGHTS RESERVED
 */
+typedef struct {
+    FxU32 (*pciMapPhysicalToLinear)(FxU32, FxU32, FxU32*);
+    void  (*pciUnmapPhysical)(FxU32, FxU32);
+    FxBool (*pciGetConfigData)(FxU32, FxU32, FxU32, void*);
+    FxBool (*pciSetConfigData)(FxU32, FxU32, FxU32, void*);
+} PciHwcCallbacks;
 
 #ifndef _PCILIB_H_
 #define _PCILIB_H_
