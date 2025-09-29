@@ -1,0 +1,36 @@
+#
+# Makefile for building the shared software libraries (swlibs) for x86-64
+#
+
+# ---
+# Compiler and flags
+# ---
+CC = gcc
+AR = ar
+CFLAGS = -m64 -msse2 -O2 -fPIC -Wall -I./fxmisc -I./newpci/pcilib
+
+# ---
+# Source files
+# ---
+C_SRSRCS_FXMISC = $(wildcard fxmisc/*.c)
+OBJS_FXMISC = $(patsubst %.c, %.o, $(C_SRCS_FXMISC))
+
+C_SRCS_PCILIB = $(wildcard newpci/pcilib/*.c)
+OBJS_PCILIB = $(patsubst %.c, %.o, $(C_SRCS_PCILIB))
+
+# ---
+# Rules
+# ---
+all: libswlibs.a
+
+libswlibs.a: $(OBJS_FXMISC) $(OBJS_PCILIB)
+	$(AR) rcs $@ $^
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f *.o *.a
+	find . -name "*.o" -exec rm {} \;
+
+.PHONY: all clean

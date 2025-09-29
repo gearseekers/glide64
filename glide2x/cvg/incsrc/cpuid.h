@@ -1,23 +1,43 @@
+/*
+ * THIS SOFTWARE IS SUBJECT TO COPYRIGHT PROTECTION AND IS OFFERED ONLY
+ * PURSUANT TO THE 3DFX GLIDE GENERAL PUBLIC LICENSE. THERE IS NO RIGHT
+ * TO USE THE GLIDE TRADEMARK WITHOUT PRIOR WRITTEN PERMISSION OF 3DFX
+ * INTERACTIVE, INC. A COPY OF THIS LICENSE MAY BE OBTAINED FROM THE 
+ * DISTRIBUTOR OR BY CONTACTING 3DFX INTERACTIVE INC(info@3dfx.com). 
+ * THIS PROGRAM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER 
+ * EXPRESSED OR IMPLIED. SEE THE 3DFX GLIDE GENERAL PUBLIC LICENSE FOR A
+ * FULL TEXT OF THE NON-WARRANTY PROVISIONS.  
+ * * USE, DUPLICATION OR DISCLOSURE BY THE GOVERNMENT IS SUBJECT TO
+ * RESTRICTIONS AS SET FORTH IN SUBDIVISION (C)(1)(II) OF THE RIGHTS IN
+ * TECHNICAL DATA AND COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013,
+ * AND/OR IN SIMILAR OR SUCCESSOR CLAUSES IN THE FAR, DOD OR NASA FAR
+ * SUPPLEMENT. UNPUBLISHED RIGHTS RESERVED UNDER THE COPYRIGHT LAWS OF
+ * THE UNITED STATES.  
+ * * COPYRIGHT 3DFX INTERACTIVE, INC. 1999, ALL RIGHTS RESERVED
+ */
+
 #ifndef CPUID_H_included
 #define CPUID_H_included
 
-#define _CPU_HAS_CPUID		0xffff
-#define _CPU_FEATURE_MMX	0x0001
-#define _CPU_FEATURE_SSE	0x0002
-#define _CPU_FEATURE_SSE2	0x0004
-#define _CPU_FEATURE_3DNOW	0x0008
-#define _CPU_FEATURE_3DNOWPLUS	0x0010
-#define _CPU_FEATURE_MMXPLUS	0x0020
+// Feature flags. These remain 32-bit values.
+#define _CPU_HAS_CPUID      0xffff
+#define _CPU_FEATURE_MMX    0x0001
+#define _CPU_FEATURE_SSE    0x0002
+#define _CPU_FEATURE_SSE2   0x0004
+#define _CPU_FEATURE_3DNOW  0x0008
+#define _CPU_FEATURE_3DNOWPLUS  0x0010
+#define _CPU_FEATURE_MMXPLUS    0x0020
 
 typedef struct _processor_info {
-    char v_name[13]; /* vendor name */
-    int family;      /* family of the processor, eg. Intel_Pentium_Pro is family 6 processor */
-    int model;       /* madel of processor, eg. Intel_Pentium_Pro is model 1 of family 6 processor */
-    int stepping;    /* Processor revision number */
-    int feature;     /* processor Feature (same as return value). */
-    int os_support;  /* does OS Support the feature */
+    char v_name[13];  /* vendor name */
+    int family;       /* family of the processor */
+    int model;        /* model of processor */
+    int stepping;     /* Processor revision number */
+    int feature;      /* processor Feature (same as return value). */
+    int os_support;   /* does OS Support the feature */
 } _p_info;
 
+// Function prototype remains valid for x64
 int _cpuid (_p_info *);
 
 #endif
