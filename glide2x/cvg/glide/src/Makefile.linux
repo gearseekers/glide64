@@ -1,70 +1,158 @@
 #
-# Makefile for building glide2x library for linux
+# Copyright (c) 1997, 1998, 1999, 2000, 3Dfx Interactive, Inc.
+# All Rights Reserved.
+#
+# This is UNPUBLISHED PROPRIETARY SOURCE CODE of 3Dfx Interactive, Inc.;
+# the contents of this file may not be disclosed to third parties, copied or
+# duplicated in any form, in whole or in part, without the prior written
+# permission of 3Dfx Interactive, Inc.
+#
+# RESTRICTED RIGHTS LEGEND:
+# Use, duplication or disclosure by the Government is subject to restrictions
+# as set forth in subdivision (c)(1)(ii) of the Rights in Technical Data
+# and Computer Software clause at DFARS 252.227-7013, and/or in similar or
+# successor clauses in the FAR, DOD or NASA FAR Supplement. Unpublished  -
+# rights reserved under the Copyright Laws of the United States.
+#
+#
+# $Revision: 1.1.1.1 $
+# $Date: 2000/02/07 16:21:42 $
 #
 
-# ---
-# User definable variables
-# ---
-CPU = x86-64
-# DEBUG = 0
-# GRX = svga
+#
+# Makefile for building Glide for SST-1 under Linux
+#
 
-# ---
-# Compiler and flags
-# ---
-CC = gcc
-AS = as
-LD = ld
+#
+# Tools
+#
+SHELL = /bin/sh
+RM = rm -f
+CP = cp
 AR = ar
+RANLIB = ranlib
 
-# ---
-# Architecture specific flags
-# ---
-ifeq ($(CPU), x86-64)
-  CFLAGS_CPU = -m64 -msse2 -O2 -fPIC
-  ASFLAGS_CPU = -m64
-  LDFLAGS_CPU = -m64
-else
-  # ... (other CPU architectures) ...
+#
+# Subdirectories containing source files
+#
+VPATH = ../oem
+
+#
+# Programs, Libraries, and Object Files
+#
+GLIDE_LIB = libglide2x.so
+GLIDE_A_LIB = libglide2x.a
+GLIDE_MAP = $(GLIDE_LIB:.so=.map)
+GLIDE_SYM = $(GLIDE_LIB:.so=.sym)
+
+GLIDE_OBJS = \
+  distate.o \
+  ditex.o \
+  diglide.o \
+  digutex.o \
+  disst.o \
+  ddgump.o \
+  fifo.o \
+  g3df.o \
+  gaa.o \
+  gbanner.o \
+  gdraw.o \
+  gerror.o \
+  gglide.o \
+  glfb.o \
+  gmovie.o \
+  gpci.o \
+  gsplash.o \
+  gsst.o \
+  gtex.o \
+  gtexdl.o \
+  gu.o \
+  guclip.o \
+  gump.o \
+  gutex.o \
+  splshdat.o \
+  fxgasm.o
+
+GLIDE_DIS_OBJS = \
+  distate.o \
+  ditex.o \
+  diglide.o \
+  digutex.o \
+  disst.o \
+  distrip.o
+
+#
+# Definitions
+#
+DEFINES = \
+  -DGLIDE_MULTIPLATFORM \
+  -D__GCC__ \
+  -D__linux__ \
+  -DP6FENCE \
+  -DGLIDE_SO \
+  -DGLIDE_NUM_TMU=1
+
+#
+# Compiler and Linker Flags
+#
+ifeq ($(FX_GLIDE_HW),)
+FX_GLIDE_HW = sst1
 endif
 
-# ---
-# Debugging flags
-# ---
-ifeq ($(DEBUG), 0)
-  CFLAGS_DEBUG = -DNDEBUG
+ifeq ($(FX_GLIDE_LIB), D)
+LIBRARY_NAME = $(GLIDE_LIB)
 else
-  CFLAGS_DEBUG = -g -DDEBUG
+LIBRARY_NAME = $(GLIDE_A_LIB)
 endif
 
-# ---
-# GRX specific flags
-# ---
-ifeq ($(GRX), svga)
-  # ... (svga flags) ...
-else
-  CFLAGS_GRX = -I/usr/X11R6/include
-  LDFLAGS_GRX = -L/usr/X11R6/lib -lX11 -lXxf86vm
+CC = gcc
+LD = gcc
+CFLAGS = -m64 -msse2 -O2 -fPIC -Wall -I. -I../../incsrc -I../../../../swlibs/fxmisc -I../../../../swlibs/newpci/pcilib -I../../init -DGLIDE_STRIP_TRIANGLE -DGLIDE_PACKET3_TRI_STRIP
+
+LDFLAGS = -shared
+
+ifeq ($(FX_GLIDE_SHARED),1)
+LDFLAGS += -soname $(GLIDE_LIB)
 endif
 
-# ---
-# General flags
-# ---
-CFLAGS = $(CFLAGS_CPU) $(CFLAGS_DEBUG) $(CFLAGS_GRX) -I../../../incsrc -I../../../../swlibs/fxmisc -I../../../../swlibs/newpci/pcilib -Wall
-ASFLAGS = $(ASFLAGS_CPU)
-LDFLAGS = $(LDFLAGS_CPU) $(LDFLAGS_GRX)
+ifeq ($(FX_GLIDE_INFO),1)
+DEFINES += -DGLIDE_INFO
+endif
 
-# ---
-# Source files
-# ---
-C_SRCS = \
-	$(wildcard *.c) \
-	$(wildcard ../../init/*.c) \
-	$(wildcard ../../../../swlibs/fxmisc/*.c) \
-	$(wildcard ../../../../swlibs/newpci/pcilib/*.c)
+CFLAGS += $(DEFINES)
 
-ASM_SRCS = \
-	$(wildcard *.S)
+#
+# Primary Target
+#
+all: $(LIBRARY_NAME)
 
-OBJS = \
-	$(patsubst %.c, %.o, $(C
+#
+# File Dependencies
+#
+libglide2x.a: $(GLIDE_OBJS)
+  $(AR) crus $@ $?
+  $(RANLIB) $@
+
+libglide2x.so: $(GLIDE_OBJS)
+  $(LD) $(LDFLAGS) -o $@ $(GLIDE_OBJS)
+  ln -sf $@ libglide2x.so
+
+#
+# Common Rules
+#
+.SUFFIXES: .c .o
+
+.c.o:
+  $(CC) $(CFLAGS) -c $<
+
+#
+# Specific Rules
+#
+fxgasm.o: fxgasm.c
+  $(CC) $(CFLAGS) -c $<
+
+#
+# Cleanup
+#
+clean:
+  $(RM) *.o *.a *.so* *.map *.sym
